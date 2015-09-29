@@ -8,5 +8,5 @@ setup(
     entry_points={
         'console_scripts': [
             'vcd = vcd.vcd:vcd_run',
-            'vcdc = vcd.vcd:vcd_config']},
+            'vcd-config = vcd.vcd:vcd_config']},
     )
