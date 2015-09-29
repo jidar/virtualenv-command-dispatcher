@@ -1,11 +1,11 @@
 #! /usr/bin/python
 import argparse
-import argcomplete
 import os
 import sys
 from ConfigParser import SafeConfigParser
 from collections import OrderedDict
 from subprocess import call
+import textwrap
 
 
 class Command(object):
@@ -59,15 +59,15 @@ class register_venv(Command):
 class register_cmd(Command):
     def __init__(self, args):
         self.init(args)
-        if self.args.venv_name not in self.cfg['venvs'].keys():
+        if self.args.venv_alias not in self.cfg['venvs'].keys():
             sys.exit(
                 "Could not register command: no virtualenv has been registered"
-                " with the name {venv}".format(venv=self.args.venv_name))
-        cmd_str = self.args.venv_name
-        if self.args.cmd:
+                " with the name {venv}".format(venv=self.args.venv_alias))
+        cmd_str = self.args.venv_alias
+        if self.args.command:
             cmd_str = "{venv},{cmd}".format(
-                venv=self.args.venv_name, cmd=self.args.cmd)
-        self.cfg['cmd_map'].update({self.args.cmd_name: cmd_str})
+                venv=self.args.venv_alias, cmd=self.args.command)
+        self.cfg['cmd_map'].update({self.args.command_alias: cmd_str})
         self.write_cfg()
 
 
@@ -90,6 +90,8 @@ class list_resources(Command):
 class exec_cmd(Command):
     def __init__(self, args):
         self.init(args)
+        if not args.command:
+            sys.exit("No command provided")
         cmd = args.command[0]
         remainder = " ".join(args.command[1:])
         info = self.cfg['cmd_map'].get(cmd).split(',')
@@ -102,32 +104,53 @@ class exec_cmd(Command):
             cmd_str, stdout=sys.stdout, stderr=sys.stderr, shell=True)
 
 
-def entry_point():
+def vcd_run():
+    """ This is a seperate entry point to avoid colisions between vcd
+    options and possible command aliases entered by the user"""
     parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers()
 
     # Read the config and set the current commands as argaprser options
     cmd = Command()
     cmd.init(list())
-    exec_parser = subparsers.add_parser("run")
-    exec_parser.add_argument(
-        'command', type=str, choices=cmd.cfg['cmd_map'].keys(),
-        nargs=argparse.REMAINDER, metavar='')
-    exec_parser.set_defaults(func=exec_cmd)
+    cmds = cmd.cfg['cmd_map'].keys()
+    cmds.sort()
+    padded_cmds = " ".join([x.ljust(len(max(cmds, key=len))) for x in cmds])
+    parser.add_argument(
+        'command', type=str, choices=cmds, nargs=argparse.REMAINDER,
+        metavar="\n" + textwrap.fill(padded_cmds))
+    parser.set_defaults(func=exec_cmd)
+
+    # parse args and trigger actions
+    args = parser.parse_args()
+    args.func(args)
+
+
+def vcd_config():
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(metavar="add, list")
 
     # Registration subparsers
-    register_parser = subparsers.add_parser("add")
-    register_subparsers = register_parser.add_subparsers()
+    register_parser = subparsers.add_parser(
+        "add", usage="\n  Add new venvs and commands to vcd")
+    register_subparsers = register_parser.add_subparsers(metavar="venv, cmd")
+
     # register venv <name> <location>
     register_venv_sparser = register_subparsers.add_parser("venv")
-    register_venv_sparser.add_argument('venv-alias', type=str)
-    register_venv_sparser.add_argument('path-to-venv-dir', type=str)
+    register_venv_sparser.add_argument(
+        'venv_alias', type=str, help="An alias used to address the virtualenv")
+    register_venv_sparser.add_argument(
+        'path_to_venv_dir', type=str,
+        help="Location of the virtualenv top level directory")
     register_venv_sparser.set_defaults(func=register_venv)
 
     # register command <name> <location>
     register_venv_sparser = register_subparsers.add_parser("cmd")
-    register_venv_sparser.add_argument('venv-alias', type=str)
-    register_venv_sparser.add_argument('command-alias', type=str)
+    register_venv_sparser.add_argument(
+        'venv_alias', type=str, help="An alias used to address the virtualenv")
+    register_venv_sparser.add_argument(
+        'command_alias', type=str,
+        help="An alias used to trigger the registered command.  The actual "
+        "command can be used here.")
     register_venv_sparser.add_argument(
         'command', nargs='?', default='', type=str,
         help="Optional.  If omitted, it is assumed that the command-alias is "
@@ -135,14 +158,11 @@ def entry_point():
     register_venv_sparser.set_defaults(func=register_cmd)
 
     # Listing subparsers
-    list_parser = subparsers.add_parser("list")
+    list_parser = subparsers.add_parser(
+        "list", usage="\n  List registered venvs and commands")
     list_parser.add_argument(
-        'resource', type=str, choices=['venvs', 'cmds'])
+        'resource', type=str, choices=['venvs', 'cmds'], metavar="venvs, cmds")
     list_parser.set_defaults(func=list_resources)
 
-    argcomplete.autocomplete(parser)
     args = parser.parse_args()
     args.func(args)
-
-if __name__ == '__main__':
-    entry_point()
