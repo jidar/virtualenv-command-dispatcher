@@ -92,6 +92,9 @@ class exec_cmd(Command):
         self.init(args)
         if not args.command:
             sys.exit("No command provided")
+        if args.command not in self.cfg.get('cmds', []):
+            sys.exit(
+                "'{}' is not a registered command".format(args.command[0]))
         cmd = args.command[0]
         remainder = " ".join(args.command[1:])
         info = self.cfg['cmd_map'].get(cmd).split(',')
